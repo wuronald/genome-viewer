@@ -2,3 +2,8 @@
 .Rhistory
 .RData
 .Ruserdata
+*.Rproj
+plots/
+data/
+overlaps/
+*.log
