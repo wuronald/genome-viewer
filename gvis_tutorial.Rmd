@@ -1,0 +1,213 @@
+---
+title: "gvis_tutorial"
+output: html_notebook
+---
+# Introduction
+
+Below is a slightly modified copy of the Gviz [vignette](https://bioconductor.org/packages/devel/bioc/vignettes/Gviz/inst/doc/Gviz.html) with minor additional comments and modifications.
+
+# install packages
+```{r installation, eval = FALSE}
+if (!require("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+
+BiocManager::install("Gviz")
+
+```
+
+# load packages
+```{r load packages}
+library(Gviz) # 1.42.1
+library(GenomicRanges)
+library(BSgenome.Hsapiens.UCSC.hg19)
+```
+
+# Basic Features: CpG island example
+```{r}
+data(cpgIslands)
+class(cpgIslands)
+
+chr <- as.character(unique(seqnames(cpgIslands)))
+gen <- genome(cpgIslands)
+atrack <- AnnotationTrack(cpgIslands, name = "CpG")
+```
+
+## plots cpg island track
+```{r plot cpg island track}
+# plot cpg island track alone
+plotTracks(atrack)
+
+# add genome coordinates track
+gtrack <- GenomeAxisTrack()
+
+# plot cpg with genome coordinates
+
+plotTracks(list(gtrack, atrack))
+
+# add ideogram track (visual representation of chromosome)
+
+itrack <- IdeogramTrack(genome = gen, chromosome = chr)
+
+# plot tracks (cpg islands, genome coordinates, and chr7 ideogram)
+
+plotTracks(list(itrack,
+                gtrack,
+                atrack))
+```
+## Using gene models
+
+```{r gene models}
+data(geneModels)
+
+# use GeneRegionTrack
+grtrack <- GeneRegionTrack(geneModels, genome = gen,
+                           chromosome = chr, name = "Gene Model")
+plotTracks(list(itrack, gtrack, atrack, grtrack))
+```
+## Zooming in
+The default plotting view automatically shows the leftmost items to the right most item. Here we specify a range to plot.
+
+```{r zoom}
+# Specify range to plot
+plotTracks(list(itrack, gtrack, atrack, grtrack),
+           from = 26700000, to = 26750000)
+
+# Controls the zoom state with extend.left and extend.right 
+plotTracks(list(itrack, gtrack, atrack, grtrack),
+           extend.left = 0.5, extend.right = 1000000)
+
+# drop bounding borders of exons
+plotTracks(list(itrack, gtrack, atrack, grtrack), 
+           extend.left = 0.5, extend.right = 1000000, col = NULL)
+```
+## Add genomic sequence track
+If we zoom in to the base-sequence level, we can add a sequence track provided from the package `BSgenome.Hsapiens.UCSC.hg19`. Note, other `BSgenome` packages are available depending on the genome of interest.
+
+```{r genome sequence track}
+# full hg19 genome sequence
+BSgenome.Hsapiens.UCSC.hg19::Hsapiens
+
+# add genome sequence track
+strack <- SequenceTrack(Hsapiens, chromosome = chr)
+
+# plot
+plotTracks(list(itrack, gtrack, atrack, grtrack, strack), 
+           from = 26591822, to = 26591852, cex = 0.8)
+
+```
+## Data Track for numeric data visualization
+So far the various tracks provide a solid backbone for genomic visualization. However, we want to add additional tracks from experimental data for example from ChIP-seq. This is where the DataTrack comes in and is the meat and potatoes of Gviz, allowing several types of visualization:
+1. histograms
+2. dot plots
+3. box and whisker plots
+
+```{r DataTrack}
+
+# randomly sampled data: dot plot (default)
+set.seed(255)
+lim <- c(26700000, 26750000)
+coords <- sort(c(lim[1], 
+                 sample(seq(from = lim[1], to = lim[2]), 99), 
+                 lim[2]))
+dat <- runif(100, min = -10, max = 10)
+dtrack <- DataTrack(data = dat, start = coords[-length(coords)],
+                    end = coords[-1], chromosome = chr, genome = gen, 
+                    name = "Uniform")
+
+# plot dot plot data track
+plotTracks(list(itrack, gtrack, atrack, grtrack, dtrack), 
+           from = lim[1], to = lim[2])
+
+# plot histogram data track
+plotTracks(list(itrack, gtrack, atrack, grtrack, dtrack), 
+           from = lim[1], to = lim[2],
+           type = "histogram")
+```
+
+# Advanced Features
+## Display parameters
+```{r display}
+grtrack <- GeneRegionTrack(geneModels, genome = gen, chromosome = chr, 
+                           name = "Gene Model",
+                           transcriptAnnotation = "symbol",
+                           background.title = "brown")
+
+# show display parameters
+head(displayPars(grtrack))
+
+# modify display parameters directly in a given track
+
+displayPars(grtrack) <- list(background.panel = "#FFFEDB", col = NULL)
+head(displayPars(grtrack))
+
+# plot
+plotTracks(list(
+  itrack,
+  gtrack,
+  atrack,
+  grtrack
+))
+
+# apply display parameters to all tracks directly via plotTracks()
+## some track objects will ignore these params if they are not compatible
+plotTracks(
+  list(itrack,
+       gtrack,
+       atrack,
+       grtrack),
+  background.panel = "#FFFEDB",
+  background.title = "darkblue"
+)
+```
+### show all possible display params for a given track object
+```{r show params}
+dp <- availableDisplayPars(grtrack)
+tail(dp)
+```
+
+## Schemes
+Schemes are used for setting global display parameters in a central location. Within a scheme are nested named lists corresponding to the various track class named and their associated display parameters.
+
+```{r setting schemes}
+getOption("Gviz.scheme") ## [1] "default"
+
+# make a new scheme called "myScheme"
+scheme <- getScheme()
+scheme$GeneRegionTrack$fill <- "salmon"
+scheme$GeneRegionTrack$col <- NULL
+scheme$GeneRegionTrack$transcriptAnnotation <- "transcript"
+addScheme(scheme, "myScheme")
+
+# apply myScheme
+options(Gviz.scheme = "myScheme")
+grtrack <- GeneRegionTrack(geneModels, genome = gen,
+                           chromosome = chr, name = "Gene Model")
+# plot
+plotTracks(grtrack)
+
+# reset scheme to default
+options(Gviz.scheme="default")
+grtrack <- GeneRegionTrack(geneModels, genome = gen, chromosome = chr,
+                           name = "Gene Model",
+                           transcriptAnnotation = "symbol")
+```
+
+# Track Classes
+
+## GenomeAxisTrack
+```{r GenomeAxisTrack}
+# highlight regions on GenomeAxisTrack
+axisTrack <- GenomeAxisTrack(range=IRanges(start = c(2e6, 4e6),
+                                           end = c(3e6, 7e6),
+                                           names = rep("N-stretch", 2)))
+plotTracks(axisTrack, from = 1e6, to = 9e6)
+plotTracks(axisTrack, from = 1e6, to = 9e6, showId = TRUE) # names supplied to range argument is shown
+
+# scale is used to represent the fraction of the plotting region
+plotTracks(axisTrack, from = 1e6, to = 9e6, scale = 0.5, 
+           labelPos = "below")
+plotTracks(axisTrack, from = 1e6, to = 9e6, scale = 1, 
+           labelPos = "below")
+
+```
+# IdeogramTrack
