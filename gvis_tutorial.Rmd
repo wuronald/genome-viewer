@@ -2,6 +2,7 @@
 title: "gvis_tutorial"
 output: html_notebook
 ---
+#
 # Introduction
 
 Below is a slightly modified copy of the Gviz [vignette](https://bioconductor.org/packages/devel/bioc/vignettes/Gviz/inst/doc/Gviz.html) with minor additional comments and modifications.
@@ -12,7 +13,7 @@ if (!require("BiocManager", quietly = TRUE))
     install.packages("BiocManager")
 
 BiocManager::install("Gviz")
-
+BiocManager::install("BSgenome.Hsapiens.UCSC.hg19")
 ```
 
 # load packages
@@ -210,4 +211,189 @@ plotTracks(axisTrack, from = 1e6, to = 9e6, scale = 1,
            labelPos = "below")
 
 ```
-# IdeogramTrack
+## IdeogramTrack
+```{r ideogram}
+
+ideoTrack <- IdeogramTrack(genome = "hg19", chromosome = "chrX")
+plotTracks(ideoTrack, from = 85e6, to = 129e6)
+
+# hide track name
+plotTracks(ideoTrack, from = 85e6, to = 129e6, showId = FALSE)
+
+# add chromosome band labels
+plotTracks(ideoTrack, from = 85e6, to = 129e6, showId = FALSE, 
+           showBandId = TRUE, cex.bands = 0.5)
+# change centromere shape
+plotTracks(ideoTrack, from = 85e6, to = 129e6, showId = FALSE,
+           centromereShape = "circle")
+```
+## DataTrack
+
+```{r datatrack}
+data(twoGroups) # granges object
+
+# load granges data to DataTrack
+dTrack <- DataTrack(twoGroups, name = "uniform")
+
+# plot
+plotTracks(dTrack) # dotplot (default)
+
+plotTracks(dTrack, type = "l") # lines plot
+
+plotTracks(dTrack, type = "b") # dot and lines plot
+
+plotTracks(dTrack, type = "a") # lines plot of average values
+
+plotTracks(dTrack, type = "s") # stair steps (horizontal first)
+
+plotTracks(dTrack, type = "S") # stair steps (vertical first)
+
+plotTracks(dTrack, type = "histogram") # histogram
+plotTracks(dTrack, type = "mountain") # ‘mountain-type’ plot relative to a baseline
+plotTracks(dTrack, type = "polygon") # ‘polygon-type’ plot relative to a baseline
+plotTracks(dTrack, type = "boxplot") # box and whisker plot
+plotTracks(dTrack, type = "gradient") # false color image of the summarized values
+plotTracks(dTrack, type = "heatmap") # false color image of the individual values
+plotTracks(dTrack, type = "horizon") # Horizon plot indicating magnitude and direction of a change relative to a baseline
+```
+```{r datatrack combinations}
+# overlay different types in the datatrack:
+## boxplot, line plot of average, and grid lines
+plotTracks(dTrack, type = c("boxplot", "a", "g"))
+```
+```{r heatmap plotting}
+colnames(mcols(twoGroups))
+
+plotTracks(dTrack, type = c("heatmap"), showSampleNames = FALSE, 
+           cex.sampleNames = 0.6)
+
+# showSampleNames corresponds to the column names
+plotTracks(dTrack, type = c("heatmap"), showSampleNames = TRUE, 
+           cex.sampleNames = 0.6)
+```
+Here the column names of the granges object can be added as labels.
+
+### Data grouping
+Here groups parameter is used to group the individual samples in the granges object.
+
+```{r data grouping}
+
+# grouped lines plot
+plotTracks(dTrack,
+           groups = rep(c("control", "treated"), each = 3),
+           type = c("a", "p", "confint"))
+
+# turn off legend
+plotTracks(
+  dTrack,
+  groups = rep(c("control", "treated"), each = 3),
+  type = c("a", "p", "confint"),
+  legend = FALSE
+)
+
+# grouped horizon plot
+data(dtHoriz)
+dtHoriz <- dtHoriz[1:6,]
+plotTracks(
+  dtHoriz,
+  type = "horiz",
+  groups = rownames(values(dtHoriz)),
+  showSampleNames = TRUE,
+  cex.sampleNames = 0.6,
+  separator = 1
+)
+```
+
+### Building DataTrack Object from files
+Here the range argument is not a GRanges object as previous examples above, but an externally loaded file, such as a wig, bigwig, or bedgraph.
+
+Below, an entire bedgraph file, which is not indexed, is loaded.
+
+```{r datatrack from bedgraph}
+bgFile <- system.file("extdata/test.bedGraph", package = "Gviz")
+dTrack2 <- DataTrack(range = bgFile, genome = "hg19", type = "l", 
+                     chromosome = "chr19", name = "bedGraph")
+class(dTrack2)
+plotTracks(dTrack2)
+```
+
+```{r data track from bam}
+bamFile <- system.file("extdata/test.bam", package = "Gviz")
+dTrack4 <- DataTrack(range = bamFile, genome = "hg19", type = "l", 
+                     name = "Coverage", window = -1, 
+                     chromosome = "chr1")
+class(dTrack4)
+
+dTrack4
+plotTracks(dTrack4, from = 189990000, to = 190000000)
+```
+Here an indexed bam file is streamed for plotting from a specific range. This reduces the memory footprint as real bam files can be quite large.
+
+### Data Transformations
+
+Below is a synthetic example to demonstrate transformations we can do on the fly.
+
+```{r data transformation}
+dat <- sin(seq(pi, 10*pi, len=500))
+dTrack.big <- DataTrack(start = seq(1, 100000, len = 500), width = 15, 
+                        chromosome = "chrX", genome = "hg19", 
+                        name = "sinus",
+                        data = sin(seq(pi, 5 * pi, len = 500)) * 
+                          runif(500, 0.5, 1.5))
+plotTracks(dTrack.big, type="hist")
+
+# bin the data
+# using window and aggregation params
+plotTracks(dTrack.big, type = "hist", window = 50)
+
+# smoothing using running window
+plotTracks(dTrack.big, type = "hist", window = -1, windowSize = 2500)
+
+# transformation using a function
+## plot values greater than zero
+plotTracks(dTrack.big, type = "l", 
+           transformation = function(x) { x[x < 0] <- 0; x })
+
+```
+
+```{r aggregateGroups}
+# without aggregate groups
+plotTracks(
+  dTrack,
+  groups = rep(c("control", "treated"), each = 3),
+  type = c("b"),
+  aggregateGroups = FALSE
+)
+
+# aggregateGroups
+## display average value for each group and each position
+## aggregation is mean by default
+plotTracks(
+  dTrack,
+  groups = rep(c("control", "treated"), each = 3),
+  type = c("b"),
+  aggregateGroups = TRUE
+)
+
+# display the maximum group values instead of mean
+plotTracks(
+  dTrack,
+  groups = rep(c("control", "treated"), each = 3),
+  type = c("b"),
+  aggregateGroups = TRUE,
+  aggregation = "max"
+)
+
+# adjust color
+plotTracks(
+  dTrack,
+  groups = rep(c("control", "treated"), each = 3),
+  type = c("b"),
+  aggregateGroups = TRUE,
+  aggregation = "max",
+  col = c("red","green")
+)
+```
+```
+
+## AnnotationTrack
