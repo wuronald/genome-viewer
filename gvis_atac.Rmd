@@ -7,12 +7,16 @@ output: html_notebook
 
 
 # install packages
+
+Here we install Gviz and their dependencies to allow for genome visualization. Additional packages such as `BSgenome` and `TxDb` contain sequence information and genomic coordinate info respectively. Specifically, we install the hg19 version of these packages, since we know we will be using hg19 aligned ATAC-seq track and signal files. Typically hg38 is preferred for newer data analysis, but it is important to note the genomic coordinates will differ between hg19 and hg38.
+
 ```{r installation, eval = FALSE}
 if (!require("BiocManager", quietly = TRUE))
     install.packages("BiocManager")
 
 BiocManager::install("Gviz")
 BiocManager::install("BSgenome.Hsapiens.UCSC.hg19")
+BiocManager::install("TxDb.Hsapiens.UCSC.hg19.knownGene")
 ```
 
 # load packages
@@ -20,9 +24,44 @@ BiocManager::install("BSgenome.Hsapiens.UCSC.hg19")
 library(Gviz) # 1.42.1
 library(GenomicRanges)
 library(BSgenome.Hsapiens.UCSC.hg19)
+library(TxDb.Hsapiens.UCSC.hg19.knownGene)
 ```
 
+# Extract coordinates for a gene
+
+Below I write a function that returns the chromosome and start/end coordinates for a given HGNC gene symbol. This will be useful when we assign coordinates to gviz for drawing. 
+```{r extract coordinates for a given gene}
+library(org.Hs.eg.db)
+
+gene_coord <- function(symbol, Txdb = TxDb.Hsapiens.UCSC.hg19.knownGene){
+  symbol <- toupper(symbol) # make gene symbol upper case
+  
+  # find the entrez id for that symbol
+  entrez_id <- select(org.Hs.eg.db, keys=symbol, keytype="SYMBOL", columns="ENTREZID")
+  
+  # find the coordinates of that gene based on entrez id
+  coords <- genes(TxDb.Hsapiens.UCSC.hg19.knownGene, filter = list(gene_id=entrez_id$ENTREZID))
+  
+  print(paste("The ENTREZID for the following gene:",symbol,"is:",entrez_id$ENTREZID))
+  
+  print(paste(
+      "The coordinates for the following gene:",
+      symbol,
+      "is:",
+      as.character(seqnames(coords)),start(coords),"-",end(coords)
+  ))
+  
+}
+
+# example function call
+gene_coord("CA9")
+```
+
+# DataTrack construction
+Next, we create DataTracks for each bigwig we want visualized using Gviz.
+
 ```{r data track from bam}
+# this is an example from the Gviz vignette
 chr = "chr1"
 bamFile <- system.file("extdata/test.bam", package = "Gviz")
 
@@ -32,10 +71,19 @@ dTrack1 <- DataTrack(range = bamFile, genome = "hg19", type = "l",
 
 dTrack1
 plotTracks(dTrack1, from = 189990000, to = 190000000)
+```
 
+## load bigwigs
+Here we load the bigwig (bw) files generated from MACS2 from our ATAC-seq experiment.
+```{r data track from bigwig}
+# set chromosome
+chr <- "chr1"
+
+# path to bigwig
 bwFile1 <-"J:/genome-viewer/heatmap/RW555-1_treat_pileup.bw"
 bwFile2 <-"J:/genome-viewer/heatmap/RW555-2_treat_pileup.bw"
 
+# create a DataTrack for each bigwig
 dTrack.ATAC1 <- DataTrack(range = bwFile1, genome = "hg19", type = "l", 
                      name = "Coverage", window = -1, 
                      chromosome = chr)
@@ -43,15 +91,14 @@ dTrack.ATAC1 <- DataTrack(range = bwFile1, genome = "hg19", type = "l",
 dTrack.ATAC2 <- DataTrack(range = bwFile2, genome = "hg19", type = "l", 
                      name = "Coverage", window = -1, 
                      chromosome = chr)
-
+# plot each DataTrack
 plotTracks(dTrack.ATAC1, from = 189990000, to = 190000000)
 plotTracks(dTrack.ATAC2, from = 189990000, to = 190000000)
 ```
 
-
-
-
-```{r}
+## Plot DataTracks with additional tracks
+Next, we add additional tracks to generate a genome view that is similar to what IGV or UCSC genome browser would provide.
+```{r data track from bigwig chr6}
 gen = "hg19"
 chr = "chr6"
 
@@ -65,7 +112,8 @@ itrack <- IdeogramTrack(genome = "hg19", chromosome = chr)
 # add sequence track
 strack <- SequenceTrack(Hsapiens, chromosome = chr)
 
-# add additional params (ie color) to data tracks
+# create a DataTrack for each bigwig
+## add groups to allow additional params (ie color) to data tracks
 dTrack.ATAC1 <- DataTrack(range = bwFile1, genome = "hg19", type = "l", 
                      name = "Signal", window = -1, 
                      chromosome = chr,
@@ -75,10 +123,12 @@ dTrack.ATAC1 <- DataTrack(range = bwFile1, genome = "hg19", type = "l",
 dTrack.ATAC2 <- DataTrack(range = bwFile2, genome = "hg19", type = "l", 
                      name = "Signal", window = -1, 
                      chromosome = chr)
-displayPars(dTrack.ATAC2) <- list(groups = factor("hypoxia", 
-              levels = c("normoxia","hypoxia")), legend = TRUE) # manually set display params 
 
-# plot two atac signal tracks
+# manually set display params (use this if you don't want to assign params during object instantiation)
+displayPars(dTrack.ATAC2) <- list(groups = factor("hypoxia", 
+              levels = c("normoxia","hypoxia")), legend = TRUE) 
+
+# plot two atac signal tracks with additional tracks
 plotTracks(list(gtrack,
                 itrack,
                 dTrack.ATAC1,
@@ -88,9 +138,7 @@ plotTracks(list(gtrack,
 
 # plot two atac signal tracks overlaid
 
-
 ot1 <- OverlayTrack(trackList=list(dTrack.ATAC1, dTrack.ATAC2))
-
 
 plotTracks(
   list(gtrack,
@@ -99,15 +147,15 @@ plotTracks(
        strack),
   from = 35000000,
   to = 40000000,
-  col = c("red","blue")
+  col = c("red","blue") # assign colors to the DataTrack groups defined earlier (ie. normoxia, hypoxia)
 )
 
 
 ```
 
 # Obtain GeneRegionTrack
+Often it is important to include a GeneRegionTrack to give context to which gene is being visualized. Both TxDb and BiomaRt can be used to retrieve this information, however, the track info is not identical.
 
-Let's compare between TxDb and BiomaRt.
 ```{r GeneRegionTrack}
 chr <- "chr6"
 # TxDb
@@ -116,12 +164,6 @@ samplefile <- system.file("extdata", "hg19_knownGene_sample.sqlite",
                           package = "GenomicFeatures")
 txdb <- loadDb(samplefile)
 GeneRegionTrack(txdb)
-txTr <- GeneRegionTrack(txdb, chromosome = chr, 
-                        start = 35000000,  end = 40000000)
-
-plotTracks(txTr)
-plotTracks(txTr, from = 35000000,
-  to = 40000000)
 
 # biomart
 library(biomaRt)
@@ -130,27 +172,47 @@ bm <- useEnsembl(host = "https://grch37.ensembl.org",
               dataset = "hsapiens_gene_ensembl")
 ```
 
-```{r comparing}
-biomTrack <- BiomartGeneRegionTrack(genome = "hg19", chromosome = "chr6", 
-                                    start = 35000000, end = 40000000,
-                                    name = "ENSEMBL", biomart = bm)
+```{r comparing plots}
+# plot TxDb
+txTr <- GeneRegionTrack(txdb,
+                        chromosome = chr,
+                        start = 35000000,
+                        end = 40000000)
+
+plotTracks(txTr)
+plotTracks(txTr, from = 35000000,
+           to = 40000000)
+
+# plot biomaRt
+biomTrack <-
+  BiomartGeneRegionTrack(
+    genome = "hg19",
+    chromosome = chr,
+    start = 35000000,
+    end = 40000000,
+    name = "ENSEMBL",
+    biomart = bm
+  )
 plotTracks(biomTrack, from = 35000000, to = 40000000)
 
-#
+# plot in the context of ATAC result
 plotTracks(
   list(gtrack,
        itrack,
        ot1,
-       txTr,biomTrack),
+       txTr, biomTrack),
   from = 35000000,
   to = 40000000,
-  col = c("red","blue")
+  col = c("red", "blue")
 )
 ```
 
-
+# Plot Gviz Genome Visualization for genes of interest
+## CA9
 ```{r CA9}
-# CA9 Locus 
+# determine locus location
+gene_coord("CA9")
+# CA9 Locus (coordinates below are from IGV and include upstream; not exactly same coords as from TxDb)
 #   chr9
 #   from = 35671925, to = 35683156
 
@@ -177,8 +239,6 @@ plotTracks(biomTrack1,
            transcriptAnnotation = "symbol")
 
 
-
-
 # add additional params (ie color) to data tracks
 dTrack.ATAC1 <- DataTrack(range = bwFile1, genome = "hg19", type = "l", 
                      name = "Signal", window = -1, 
@@ -193,7 +253,6 @@ displayPars(dTrack.ATAC2) <- list(groups = factor("hypoxia",
               levels = c("normoxia","hypoxia")), legend = TRUE) # manually set display params 
 
 ot1 <- OverlayTrack(trackList=list(dTrack.ATAC1, dTrack.ATAC2))
-# ylims <- extendrange(range(c(values(dTrack.ATAC1), values(dTrack.ATAC2))))
 
 # ######
 # plot #
