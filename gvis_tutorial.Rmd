@@ -394,6 +394,333 @@ plotTracks(
   col = c("red","green")
 )
 ```
-```
+
 
 ## AnnotationTrack
+
+```{r annotationTrack}
+aTrack <- AnnotationTrack(start = c(10, 40, 120), width = 15, 
+                          chromosome = "chrX", 
+                          strand = c("+", "*", "-"),
+                          id = c("Huey", "Dewey", "Louie"), 
+                          genome = "hg19", name = "foo")
+plotTracks(aTrack)
+plotTracks(aTrack, shape = "box", featureAnnotation = "id")
+plotTracks(aTrack, shape = "ellipse", featureAnnotation = "id", 
+           fontcolor.feature = "darkblue")
+```
+In the above AnnotationTrack, strand info is denoted with the strand param. An arrow is used to denote either + or - strand, and a box is used for lack of strand info. If these features are named using the id param, we can display them by enabling the featureAnnotation parameter during plotTracks. The font and shape can also be forced during the plotTracks, where we explicitly change the shapes to a box or an ellipse.
+
+```{r annotationtrack groups}
+aTrack.groups <- AnnotationTrack(start = c(50, 180, 260, 460, 860, 1240), 
+                                 width = c(15, 20, 40, 100, 200, 20),
+                                 chromosome = "chrX",
+                                 strand = rep(c("+", "*", "-"), 
+                                              c(1, 3, 2)),
+                                 group = rep(c("Huey", "Dewey", "Louie"), 
+                                             c(1, 3, 2)),
+                                 genome = "hg19", name = "foo")
+
+plotTracks(aTrack.groups)
+plotTracks(aTrack.groups, groupAnnotation = "group") # show the group labels
+plotTracks(aTrack.groups, groupAnnotation = "group",
+           just.group = "right") # show the group labels AND place on the right
+plotTracks(aTrack.groups, groupAnnotation = "group",
+           just.group = "above") # show the group labels AND place above
+
+# overlapping annotations are stacked
+aTrack.stacked <- AnnotationTrack(start = c(50, 180, 260, 800, 600, 1240),
+                                  width = c(15, 20, 40, 100, 500, 20),
+                                  chromosome = "chrX",
+                                  strand = "*",
+                                  group = rep(c("Huey", "Dewey", "Louie"), 
+                                              c(1, 3, 2)),
+                                  genome = "hg19", name = "foo")
+plotTracks(aTrack.stacked, groupAnnotation="group")
+```
+Similar to the group feature mentioned early in the DataTracks, the group param in AnnotationTrack helps group related features in the track.
+
+```{r annotationtrack groups stacking}
+plotTracks(aTrack.stacked)
+plotTracks(aTrack.stacked, stacking = "squish") # this is the default
+plotTracks(aTrack.stacked, stacking = "dense") # overlapping items are joined
+plotTracks(aTrack.stacked, stacking = "hide")
+
+```
+
+```{r annotationtrack features}
+feature(aTrack.stacked)
+## [1] "unknown" "unknown" "unknown" "unknown" "unknown" "unknown"
+feature(aTrack.stacked) <- c("foo", "bar", "bar", "bar", "no", "no")
+feature(aTrack.stacked)
+
+# both the groupAnnotation and featureAnnotation param can be used to show the assigned "feature" name
+plotTracks(aTrack.stacked, featureAnnotation = "feature", 
+           groupAnnotation = "feature", fontcolor.feature = 1, 
+           cex.feature = 0.7)
+
+# fill color of features
+plotTracks(aTrack.stacked, groupAnnotation = "group", 
+           foo = "darkred", bar = "darkgreen") # the feature name is explicitly assigned a color
+```
+Here we can define the feature types of each annotation region in the track. This is useful if we want to distinguish and denote which regions are mRNAs, miRNAs, rRNAs and others.
+
+```{r overplotting}
+data("denseAnnTrack")
+plotTracks(denseAnnTrack, showOverplotting = FALSE)
+plotTracks(denseAnnTrack, showOverplotting = TRUE) # saturated colors indicate overplotting density
+```
+
+### AnnotationTrack from other files
+Below we stream a bam we previously used for DataTrack. 
+```{r annotation track from bam}
+aTrack2 <- AnnotationTrack(range = bamFile, genome = "hg19", 
+                           name = "Reads", chromosome = "chr1")
+class(aTrack2)
+aTrack2
+plotTracks(aTrack2, from = 189995000, to = 190000000)
+
+# check default mapping
+availableDefaultMapping(bamFile, "AnnotationTrack")
+
+# assign group mapping to id
+aTrack3 <- AnnotationTrack(range = bamFile, genome = "hg19", 
+                           name = "Reads", chromosome = "chr1", 
+                           group = "id")
+aTrack3
+plotTracks(aTrack3, from = 189995000, to = 190000000)
+
+
+# plot both DataTrack and AnnotationTrack
+plotTracks(list(dTrack4, aTrack2), from = 189990000, to = 190000000)
+
+```
+
+# GeneRegionTrack
+GeneRegionTrack inherits from the AnnotationTrack. We need to provide start positions and either end positions or defined widths.
+
+```{r GeneRegionTrack}
+data(geneModels)
+grtrack <- GeneRegionTrack(geneModels, genome = gen, chromosome = chr, 
+                           name = "foo")
+head(gene(grtrack))
+head(transcript(grtrack))
+head(exon(grtrack))
+head(symbol(grtrack))
+
+plotTracks(grtrack)
+
+plotTracks(grtrack, transcriptAnnotation = "symbol") # shows the gene symbol
+plotTracks(grtrack, transcriptAnnotation = "transcript") # shows the ensembl transcript id
+plotTracks(grtrack, exonAnnotation = "exon", extend.left = -0.8, 
+           fontcolor.exon = 1)
+
+# collapse gene models
+plotTracks(grtrack, collapseTranscripts = TRUE, shape = "arrow", 
+           transcriptAnnotation = "symbol")
+plotTracks(grtrack, collapseTranscripts = "longest", shape = "arrow", 
+           transcriptAnnotation = "symbol") # plot the longest transcript
+plotTracks(grtrack, collapseTranscripts = "meta", shape = "arrow", 
+           transcriptAnnotation = "symbol") # plot union of all exons
+```
+# TxDb
+We can also utilize TxDb objects to build GeneRegionTracks for everyday use. Gviz has built in functionality to utilize TxDb objects from GenomicFeatures package.
+```{r generegiontrack form TxDb}
+library(GenomicFeatures)
+samplefile <- system.file("extdata", "hg19_knownGene_sample.sqlite", 
+                          package = "GenomicFeatures")
+txdb <- loadDb(samplefile)
+GeneRegionTrack(txdb)
+
+# here we subset the GeneRegionTrack by supplying the start and end
+txTr <- GeneRegionTrack(txdb, chromosome = "chr6", 
+                        start = 35000000,  end = 40000000) # must supply the chromosome
+
+# genome feature annotations (eg. CDS, utr5, etc are stored)
+feature(txTr)
+plotTracks(txTr)
+```
+## EnsDb
+The Ensembl Genome Browser tracks from EnsDb objects from the ensembldb package can also be used. The `ensembldb` package has a function that directly prepares a track for use in Gviz via `getGeneRegionTrackForGviz`.
+
+```{r EnsDb}
+library(ensembldb)
+library(EnsDb.Hsapiens.v75)
+
+edb <- EnsDb.Hsapiens.v75
+seqlevelsStyle(edb) <- "UCSC"
+
+eTrack <- GeneRegionTrack(edb, chromosome = "chr6", 
+                          start = 35000000, end = 40000000)
+
+plotTracks(eTrack)
+```
+
+## biomaRt
+BiomaRt can also be used to to quickly get a gene model, but requires internet connection.
+```{r biomaRt}
+library(biomaRt)
+bm <- useEnsembl(host = "https://grch37.ensembl.org", 
+              biomart = "ENSEMBL_MART_ENSEMBL", 
+              dataset = "hsapiens_gene_ensembl")
+biomTrack <- BiomartGeneRegionTrack(genome = "hg19", chromosome = chr, 
+                                    start = 20e6, end = 21e6,
+                                    name = "ENSEMBL", biomart = bm)
+plotTracks(biomTrack)
+
+# remove bound boxes, control vertical spacing
+plotTracks(biomTrack, col.line = NULL, col = NULL, stackHeight = 0.3)
+
+# filter options
+# limit to refseq gene models
+bm <- useEnsembl(host = "https://grch37.ensembl.org", 
+              biomart = "ENSEMBL_MART_ENSEMBL", 
+              dataset = "hsapiens_gene_ensembl")
+biomTrack <- BiomartGeneRegionTrack(genome = "hg19", chromosome = chr, 
+                                    start = 20e6, end = 21e6,
+                                    name = "ENSEMBL", 
+                                    filter = list(with_refseq_mrna=TRUE), 
+                                    biomart = bm)
+plotTracks(biomTrack, col.line = NULL, col = NULL, stackHeight = 0.3)
+
+# gene model at provided gene symbol
+m <- useEnsembl(host = "https://grch37.ensembl.org", 
+              biomart = "ENSEMBL_MART_ENSEMBL",
+              dataset = "hsapiens_gene_ensembl")
+biomTrack <- BiomartGeneRegionTrack(genome = "hg19", name = "ENSEMBL", 
+                                    symbol = "ABCB5", biomart = bm)
+plotTracks(biomTrack, transcriptAnnotation = "symbol")
+```
+# DetailsAnnotationTrack
+
+Example of DNA methylation probes allows us to demonstrate the use of DetailsAnnotationTrack. This track shows the location of 4 probes and their methylation measurements between two groups.
+```{r DetailsAnnotationTrack}
+library(GenomicRanges)
+
+# genomic location for 4 DNA methylation probes
+probes <- GRanges(seqnames = "chr7", ranges = IRanges(
+      start = c(2000000, 2070000, 2100000, 2160000),
+      end = c(2050000, 2130000, 2150000, 2170000)), 
+  strand = c("-", "+", "-", "-"))
+
+# methylation level
+methylation <- matrix(c(rgamma(400, 1)),
+                  ncol = 100,
+                  dimnames = list(paste("probe", 1:4, sep = ""), NULL))
+methylation[, 51:100] <- methylation[, 51:100] + 0:3
+sgroups <- rep(c("grp1", "grp2"), each = 50)
+
+# density plot function; extracts data from methylation matrix
+library(lattice)
+details <- function(identifier, ...) {
+  d <- data.frame(signal = methylation[identifier, ], group = sgroups)
+  print(densityplot(~signal, group = group, data = d, 
+                    main = list(label = identifier, cex = 0.7),
+                    scales = list(draw = FALSE, x = list(draw = TRUE)), 
+                    ylab = "", xlab = ""), 
+        newpage = FALSE, prefix = "plot")
+}
+
+deTrack <- AnnotationTrack(range = probes, genome = "hg19", 
+                           chromosome = 7, id = rownames(methylation),
+                           name = "probe details", stacking = "squish",
+                           fun = details)
+plotTracks(deTrack)
+
+# adjust some display params
+plotTracks(deTrack, details.size = 0.75, detailsConnector.pch = NA, 
+           detailsConnector.col = "darkred", 
+           detailsBorder.fill = "#FFE3BF", 
+           detailsBorder.col = "darkred", shape ="box", 
+           detailsConnector.lty = "dotted")
+
+```
+# SequenceTrack
+The character representation of an underlying genomic sequence can be provided by a BSgenome, and only the sequences from the accessed chromosome is loaded into memory.
+```{r SequenceTrack}
+library(BSgenome.Hsapiens.UCSC.hg19)
+sTrack <- SequenceTrack(Hsapiens)
+sTrack
+
+plotTracks(sTrack, chromosome = 1, from = 20000, to = 20050)
+
+# change color encoding to be less busy
+fcol <- c(A="darkgray", C="darkgray", T="darkgray", G="darkgray")
+plotTracks(sTrack, chromosome = 1, from = 20000, to = 20050, 
+           fontcolor = fcol)
+# add 5' to 3' indication
+plotTracks(sTrack, chromosome = 1, from = 20000, to = 20050,
+           add53 = TRUE)
+
+# plot complementary strand
+
+plotTracks(sTrack, chromosome = 1, from = 20000, to = 20050, 
+           add53 = TRUE, complement = TRUE)
+
+# overplotting example
+# letters are converted to boxes
+plotTracks(sTrack, chromosome = 1, from = 20000, to = 20100)
+
+# prevent this by decreasing font size
+plotTracks(sTrack, chromosome = 1, from = 20000, to = 20100, cex = 0.5)
+
+# force boxes
+plotTracks(sTrack, chromosome = 1, from = 20000, to = 20050,
+           noLetters = TRUE)
+
+
+
+
+
+```
+# Track highlighting and overlays
+
+```{r highlight track}
+# use the HighlightTrack constructor
+ht <- HighlightTrack(trackList = list(atrack, grtrack, dtrack),
+                     start = c(26705000, 26720000), width = 7000,
+                     chromosome = 7)
+
+plotTracks(list(itrack, gtrack, ht), from = lim[1], to = lim[2])
+
+# highlighting with a gap
+ht1 <- HighlightTrack(trackList=list(itrack, gtrack, atrack), 
+                      start = c(26705000, 26720000), width = 7000, 
+                      chromosome = 7)
+ht2 <- HighlightTrack(trackList = dtrack, start = c(26705000, 26720000),
+                      width = 7000, chromosome = 7)
+plotTracks(list(ht1, grtrack, ht2), from = lim[1], to = lim[2])
+
+# adjust color and border
+ht3 <- HighlightTrack(trackList = list(atrack, grtrack, dtrack),
+                     start = c(26705000, 26720000), width = 7000,
+                     chromosome = 7,
+                     col = TRUE,
+                     fill = "bisque")
+
+plotTracks(list(itrack, gtrack, ht3), from = lim[1], to = lim[2])
+
+```
+# Overlays
+```{r overlays}
+dat <- runif(100, min = -2, max = 22)
+dtrack2 <- DataTrack(data = dat, start = coords[-length(coords)], 
+                end = coords[-1], chromosome = chr, genome = gen, 
+                name = "Uniform2",  groups = factor("sample 2", 
+                  levels = c("sample 1", "sample 2")), legend = TRUE)
+displayPars(dtrack) <- list(groups = factor("sample 1", 
+              levels = c("sample 1", "sample 2")), legend = TRUE)
+ot <- OverlayTrack(trackList=list(dtrack2, dtrack))
+ylims <- extendrange(range(c(values(dtrack), values(dtrack2))))
+plotTracks(list(itrack, gtrack, ot), from = lim[1], to = lim[2], 
+           ylim = ylims, type = c("smooth", "p"))
+
+```
+
+```{r overlays with blending}
+displayPars(dtrack) <- list(alpha.title = 1, alpha = 0.5)
+displayPars(dtrack2) <- list(alpha.title = 1, alpha = 0.5)
+ot <- OverlayTrack(trackList = list(dtrack, dtrack2))
+plotTracks(list(itrack, gtrack, ot), from = lim[1], to = lim[2], 
+           ylim = ylims, type = c("hist"), window = 30)
+```

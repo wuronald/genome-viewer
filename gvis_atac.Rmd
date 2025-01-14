@@ -1,0 +1,231 @@
+---
+title: "gvis_atac"
+output: html_notebook
+---
+
+# Introduction
+
+
+# install packages
+```{r installation, eval = FALSE}
+if (!require("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+
+BiocManager::install("Gviz")
+BiocManager::install("BSgenome.Hsapiens.UCSC.hg19")
+```
+
+# load packages
+```{r load packages}
+library(Gviz) # 1.42.1
+library(GenomicRanges)
+library(BSgenome.Hsapiens.UCSC.hg19)
+```
+
+```{r data track from bam}
+chr = "chr1"
+bamFile <- system.file("extdata/test.bam", package = "Gviz")
+
+dTrack1 <- DataTrack(range = bamFile, genome = "hg19", type = "l", 
+                     name = "Coverage", window = -1, 
+                     chromosome = chr)
+
+dTrack1
+plotTracks(dTrack1, from = 189990000, to = 190000000)
+
+bwFile1 <-"J:/genome-viewer/heatmap/RW555-1_treat_pileup.bw"
+bwFile2 <-"J:/genome-viewer/heatmap/RW555-2_treat_pileup.bw"
+
+dTrack.ATAC1 <- DataTrack(range = bwFile1, genome = "hg19", type = "l", 
+                     name = "Coverage", window = -1, 
+                     chromosome = chr)
+
+dTrack.ATAC2 <- DataTrack(range = bwFile2, genome = "hg19", type = "l", 
+                     name = "Coverage", window = -1, 
+                     chromosome = chr)
+
+plotTracks(dTrack.ATAC1, from = 189990000, to = 190000000)
+plotTracks(dTrack.ATAC2, from = 189990000, to = 190000000)
+```
+
+
+
+
+```{r}
+gen = "hg19"
+chr = "chr6"
+
+# add genome coordinates track
+gtrack <- GenomeAxisTrack()
+
+# add ideogram track (visual representation of chromosome)
+
+itrack <- IdeogramTrack(genome = "hg19", chromosome = chr)
+
+# add sequence track
+strack <- SequenceTrack(Hsapiens, chromosome = chr)
+
+# add additional params (ie color) to data tracks
+dTrack.ATAC1 <- DataTrack(range = bwFile1, genome = "hg19", type = "l", 
+                     name = "Signal", window = -1, 
+                     chromosome = chr,
+                     groups = factor("normoxia", levels =c("normoxia","hypoxia")),
+                     legend = TRUE)
+
+dTrack.ATAC2 <- DataTrack(range = bwFile2, genome = "hg19", type = "l", 
+                     name = "Signal", window = -1, 
+                     chromosome = chr)
+displayPars(dTrack.ATAC2) <- list(groups = factor("hypoxia", 
+              levels = c("normoxia","hypoxia")), legend = TRUE) # manually set display params 
+
+# plot two atac signal tracks
+plotTracks(list(gtrack,
+                itrack,
+                dTrack.ATAC1,
+                dTrack.ATAC2,
+                strack), 
+           from = 35000000, to = 40000000)
+
+# plot two atac signal tracks overlaid
+
+
+ot1 <- OverlayTrack(trackList=list(dTrack.ATAC1, dTrack.ATAC2))
+
+
+plotTracks(
+  list(gtrack,
+       itrack,
+       ot1,
+       strack),
+  from = 35000000,
+  to = 40000000,
+  col = c("red","blue")
+)
+
+
+```
+
+# Obtain GeneRegionTrack
+
+Let's compare between TxDb and BiomaRt.
+```{r GeneRegionTrack}
+chr <- "chr6"
+# TxDb
+library(GenomicFeatures)
+samplefile <- system.file("extdata", "hg19_knownGene_sample.sqlite", 
+                          package = "GenomicFeatures")
+txdb <- loadDb(samplefile)
+GeneRegionTrack(txdb)
+txTr <- GeneRegionTrack(txdb, chromosome = chr, 
+                        start = 35000000,  end = 40000000)
+
+plotTracks(txTr)
+plotTracks(txTr, from = 35000000,
+  to = 40000000)
+
+# biomart
+library(biomaRt)
+bm <- useEnsembl(host = "https://grch37.ensembl.org", 
+              biomart = "ENSEMBL_MART_ENSEMBL", 
+              dataset = "hsapiens_gene_ensembl")
+```
+
+```{r comparing}
+biomTrack <- BiomartGeneRegionTrack(genome = "hg19", chromosome = "chr6", 
+                                    start = 35000000, end = 40000000,
+                                    name = "ENSEMBL", biomart = bm)
+plotTracks(biomTrack, from = 35000000, to = 40000000)
+
+#
+plotTracks(
+  list(gtrack,
+       itrack,
+       ot1,
+       txTr,biomTrack),
+  from = 35000000,
+  to = 40000000,
+  col = c("red","blue")
+)
+```
+
+
+```{r CA9}
+# CA9 Locus 
+#   chr9
+#   from = 35671925, to = 35683156
+
+chr <-"chr9"
+
+# add genome coordinates track
+gtrack <- GenomeAxisTrack()
+
+# add ideogram track (visual representation of chromosome)
+
+itrack <- IdeogramTrack(genome = "hg19", chromosome = chr)
+
+# biomart GeneRegionTrack at CA9
+## a) select CA9 locus via gene symbol
+biomTrack <- BiomartGeneRegionTrack(genome = "hg19", name = "ENSEMBL", 
+                                    symbol = "CA9", biomart = bm)
+
+plotTracks(biomTrack, 
+           transcriptAnnotation = "symbol")
+## b) select CA9 locus via ensembl id
+biomTrack1 <- BiomartGeneRegionTrack(genome = "hg19", name = "ENSEMBL", 
+                                    gene = "ENSG00000107159", biomart = bm)
+plotTracks(biomTrack1, 
+           transcriptAnnotation = "symbol")
+
+
+
+
+# add additional params (ie color) to data tracks
+dTrack.ATAC1 <- DataTrack(range = bwFile1, genome = "hg19", type = "l", 
+                     name = "Signal", window = -1, 
+                     chromosome = chr,
+                     groups = factor("normoxia", levels =c("normoxia","hypoxia")),
+                     legend = TRUE)
+
+dTrack.ATAC2 <- DataTrack(range = bwFile2, genome = "hg19", type = "l", 
+                     name = "Signal", window = -1, 
+                     chromosome = chr)
+displayPars(dTrack.ATAC2) <- list(groups = factor("hypoxia", 
+              levels = c("normoxia","hypoxia")), legend = TRUE) # manually set display params 
+
+ot1 <- OverlayTrack(trackList=list(dTrack.ATAC1, dTrack.ATAC2))
+# ylims <- extendrange(range(c(values(dTrack.ATAC1), values(dTrack.ATAC2))))
+
+# ######
+# plot #
+########
+
+# stacked version
+plotTracks(
+  list(itrack,
+       gtrack,
+       dTrack.ATAC1,
+       dTrack.ATAC2,
+       biomTrack1),
+  from = 35671925,
+  to = 35683156,
+  col = c("red", "blue"),
+  transcriptAnnotation = "symbol",
+  # set group colors
+  ylim = c(0, 3) # The range of the y-axis scale
+)
+
+# overlay version
+plotTracks(
+  list(itrack,
+       gtrack,
+       ot1,
+       biomTrack1),
+  from = 35671925,
+  to = 35683156,
+  col = c("red", "blue"),
+  # set group colors
+  transcriptAnnotation = "symbol",
+  ylim = c(0, 3) # The range of the y-axis scale
+)
+
+```
