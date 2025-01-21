@@ -17,6 +17,8 @@ if (!require("BiocManager", quietly = TRUE))
 BiocManager::install("Gviz")
 BiocManager::install("BSgenome.Hsapiens.UCSC.hg19")
 BiocManager::install("TxDb.Hsapiens.UCSC.hg19.knownGene")
+BiocManager::install("org.Hs.eg.db")
+
 ```
 
 # load packages
@@ -25,6 +27,14 @@ library(Gviz) # 1.42.1
 library(GenomicRanges)
 library(BSgenome.Hsapiens.UCSC.hg19)
 library(TxDb.Hsapiens.UCSC.hg19.knownGene)
+```
+
+## TEMPORARY loading bdg
+```{r temp load bdg}
+bgFile <- system.file("extdata/test.bedGraph", package = "Gviz")
+dTrack.ATAC1 <- DataTrack(range = bgFile, genome = "hg19", type = "l", 
+                     chromosome = "chr6", name = "bedGraph")
+dTrack.ATAC2 <- dTrack.ATAC1
 ```
 
 # Extract coordinates for a gene
@@ -154,7 +164,7 @@ plotTracks(
 ```
 
 # Obtain GeneRegionTrack
-Often it is important to include a GeneRegionTrack to give context to which gene is being visualized. Both TxDb and BiomaRt can be used to retrieve this information, however, the track info is not identical.
+Often it is important to include a GeneRegionTrack to give context to which gene is being visualized through gene models. Both TxDb and BiomaRt can be used to retrieve this information, however, the track info is not identical.
 
 ```{r GeneRegionTrack}
 chr <- "chr6"
@@ -172,7 +182,7 @@ bm <- useEnsembl(host = "https://grch37.ensembl.org",
               dataset = "hsapiens_gene_ensembl")
 ```
 
-```{r comparing plots}
+```{r comparing TxDb vs biomaRt}
 # plot TxDb
 txTr <- GeneRegionTrack(txdb,
                         chromosome = chr,
@@ -193,12 +203,38 @@ biomTrack <-
     name = "ENSEMBL",
     biomart = bm
   )
-plotTracks(biomTrack, from = 35000000, to = 40000000)
+biomTrack_filt <-
+  BiomartGeneRegionTrack(
+    genome = "hg19",
+    chromosome = chr,
+    start = 35000000,
+    end = 40000000,
+    name = "ENSEMBL",
+    filter = list(with_refseq_mrna=TRUE), # filtering to RefSeq models only
+    biomart = bm
+  )
+biomTrack_filt_collapse <-
+  BiomartGeneRegionTrack(
+    genome = "hg19",
+    chromosome = chr,
+    start = 35000000,
+    end = 40000000,
+    name = "ENSEMBL",
+    filter = list(with_refseq_mrna=TRUE), # filtering to RefSeq models only
+    collapseTranscripts = "longest",
+    biomart = bm
+  )
 
+plotTracks(list(biomTrack,biomTrack_filt, biomTrack_filt_collapse), from = 35000000, to = 40000000)
+
+
+
+ot1 <- OverlayTrack(trackList=list(dTrack.ATAC1, dTrack.ATAC2))
 # plot in the context of ATAC result
 plotTracks(
-  list(gtrack,
-       itrack,
+  list(
+       #gtrack,
+       #itrack,
        ot1,
        txTr, biomTrack),
   from = 35000000,
@@ -234,7 +270,8 @@ plotTracks(biomTrack,
            transcriptAnnotation = "symbol")
 ## b) select CA9 locus via ensembl id
 biomTrack1 <- BiomartGeneRegionTrack(genome = "hg19", name = "ENSEMBL", 
-                                    gene = "ENSG00000107159", biomart = bm)
+                                    gene = "ENSG00000107159", biomart = bm,
+                                    col = "transparent")
 plotTracks(biomTrack1, 
            transcriptAnnotation = "symbol")
 
@@ -287,4 +324,290 @@ plotTracks(
   ylim = c(0, 3) # The range of the y-axis scale
 )
 
+```
+
+# Dynamic Y-axis scaling
+Gviz can overlay several DataTracks using the `OverlayTrack()` function, but the y-axis range is controlled by the first DataTrack. One must explicitly specify the y-axis range that is shared across all those overlayed tracks for proper comparison. The default behavior is to take the y-axis of the first DataTrack within the list of DataTracks being overlayed. This can be problematic if other DataTracks have different maximal signals, which results in a suboptimal y-axis range being set.
+
+Here I write a function that can dynamically scale the Y-axis given one or more bigwigs that are plotted together.
+## one sample
+```{r dyanamic y-axis scaling function}
+# Function to get max signal from bigWig in a given range
+getMaxSignal <- function(bigwig_file, chr, start, end) {
+  # Import specific genomic range from bigWig
+  bw <- import(bigwig_file, 
+              format = "bigWig",
+              which = GRanges(seqnames = chr,
+                             ranges = IRanges(start = start, 
+                                            end = end)))
+  
+  # Return maximum signal value
+  return(max(bw$score))
+}
+
+# Create and plot track with dynamic y-axis
+createScaledTrack <- function(bigwig_file, chr, start, end, 
+                             track_name = "Signal Track") {
+  # Get maximum signal for scaling
+  max_signal <- getMaxSignal(bigwig_file, chr, start, end)
+  
+  print(paste("The max signal for this bigwig is", max_signal))
+  # Create DataTrack with adjusted y-limits
+  dt <- DataTrack(range = bigwig_file,
+                  chromosome = chr,
+                  from = start,
+                  to = end,
+                  name = track_name,
+                  type = "l",
+                  ylim = c(0, max_signal * 1.1)) # Add 10% padding
+  
+  return(dt)
+}
+```
+
+```{r testing dynamic y-axis scaling}
+# Example usage
+## comment out depending on PC or macbook:
+# bigwig_file <- "data/ENCODE/ENCFF923TGK.bigWig"
+bigwig_file <- bwFile1
+
+chr <- "chr9"
+start <- 35671925
+end <- 35683156
+
+
+# Create track with automatic scaling
+scaled_track <- createScaledTrack(bigwig_file, chr, start, end)
+
+# Plot track
+plotTracks(scaled_track, from = start, to = end)
+
+# Combine with other tracks:
+genome_axis <- GenomeAxisTrack()
+plotTracks(list(genome_axis, scaled_track), from = start, to = end)
+
+# compare unscaled to scaled
+unscaled_track <- DataTrack(range = bigwig_file,
+                  chromosome = chr,
+                  from = start,
+                  to = end,
+                  name = "unscaled",
+                  type = "l"
+                  ) 
+
+plotTracks(
+  list(itrack,
+       gtrack,
+       unscaled_track,
+       scaled_track,
+       biomTrack1),
+  from = 35671925,
+  to = 35683156,
+  col = c("red", "blue"),
+  # set group colors
+  transcriptAnnotation = "symbol"
+)
+```
+Typically, more than one bigwig file is used to construct a figure. For example, if we are comparing control vs treatment or in the case below, normoxia vs hypoxia.
+Below we adjust the function to take in more than one input bigwig file:
+## one or more samples
+```{r one or more bw y-axis scaling}
+# Function to get max signal from one or more bigWig files in a given range
+getMaxSignal <- function(bigwig_files, chr, start, end) {
+  # Handle single file input
+  if (is.character(bigwig_files) && length(bigwig_files) == 1) {
+    bigwig_files <- list(bigwig_files)
+  }
+  
+  # Get maximum signal across all files
+  max_signals <- sapply(bigwig_files, function(bw) {
+    # Import specific genomic range from bigWig
+    data <- import(bw,
+                   format = "bigWig",
+                   which = GRanges(
+                     seqnames = chr,
+                     ranges = IRanges(start = start,
+                                      end = end)
+                   ))
+    
+    if (length(data) == 0)
+      return(0)
+    return(max(data$score))
+  })
+  
+  return(max(max_signals))
+}
+
+# Create and plot tracks with dynamic y-axis
+createScaledTracks <- function(bigwig_files,
+                               chr,
+                               start,
+                               end,
+                               track_names = NULL,
+                               colors = NULL,
+                               padding_factor = 1.1,
+                               overlay = "no") {
+  # Handle input parameters
+  if (is.character(bigwig_files) && length(bigwig_files) == 1) {
+    bigwig_files <- list(bigwig_files)
+  }
+  
+  # Generate default track names if not provided
+  if (is.null(track_names)) {
+    track_names <- paste("Signal", seq_along(bigwig_files))
+  } else if (length(track_names) != length(bigwig_files)) {
+    stop("Number of track names must match number of bigWig files")
+  }
+  
+  # Generate default colors if not provided
+  if (is.null(colors)) {
+    colors <- rainbow(length(bigwig_files))
+  } else if (length(colors) != length(bigwig_files)) {
+    stop("Number of colors must match number of bigWig files")
+  }
+  
+  # Sample Grouping
+  ## INSERT sample grouping code
+  
+  # Get maximum signal across all files
+  max_signal <- getMaxSignal(bigwig_files, chr, start, end)
+  
+  
+  # tracks <- mapply(function(bw, name, col) {
+  #   DataTrack(range = bw,
+  #             chromosome = chr,
+  #             from = start,
+  #             to = end,
+  #             name = name,
+  #             type = "l",
+  #             col = col,
+  #             #groups = factor(track_names[1],
+  #             groups = factor(name,
+  #             levels = track_names),
+  #             legend = TRUE,
+  #             ylim = c(0, max_signal * padding_factor))
+  #
+  # }, bigwig_files, track_names, colors, SIMPLIFY = FALSE)
+  
+  # Create DataTrack for each bigWig file
+  tracks <- list()
+  for (i in seq_along(bigwig_files)) {
+    tracks[[i]] <- DataTrack(
+      range = bigwig_files[[i]],
+      chromosome = chr,
+      from = start,
+      to = end,
+      name = track_names[i],
+      type = "l",
+      col = colors[i],
+      # Explicitly assign track color by index
+      baseline = 0,
+      # Ensure histogram starts at 0
+      col.baseline = "black",
+      # set baseline color
+      groups = factor(track_names[i],
+                      levels = track_names),
+      legend = TRUE,
+      ylim = c(0, max_signal * padding_factor)
+    )
+  }
+  
+  # return scaled tracks:
+  # option to overlay tracks
+  if (tolower(overlay) == "yes") {
+    tracks[[1]]@name <- "signal" # set shared y-axis title
+    overlayTrack <- OverlayTrack(trackList = tracks)
+    return(overlayTrack)
+  } else{
+    # default to stack tracks
+    return(tracks)
+  }
+  
+}
+
+```
+
+```{r example use of one or more samples}
+# Example usage:
+
+# Single file
+single_bigwig <- "J:/genome-viewer/heatmap/RW555-1_treat_pileup.bw"
+single_track <- createScaledTracks(single_bigwig, "chr9", 35671925, 35683156)
+
+# Multiple files
+bigwig_files <- list(
+  "J:/genome-viewer/heatmap/RW555-1_treat_pileup.bw",
+  "J:/genome-viewer/heatmap/RW555-2_treat_pileup.bw"
+)
+
+# Custom track names and colors
+track_names <- c("normoxia", "hypoxia")
+track_colors <- c("red", "blue")
+
+# Create tracks with custom parameters
+chr = "chr9"
+start = 35671925
+end = 35683156
+
+scaledTracks <- createScaledTracks(
+  bigwig_files = bigwig_files,
+  chr = chr,
+  start = start,
+  end = end,
+  track_names = track_names,
+  colors = track_colors,
+  padding_factor = 1.2  # 20% padding above max signal
+)
+
+# Plot tracks with genome axis
+gtrack <- GenomeAxisTrack()
+itrack <- IdeogramTrack(genome = "hg19", chromosome = chr)
+
+plotTracks(c(list(itrack,
+                  genome_axis), 
+                  scaledTracks),
+           from = start, to = end)
+
+plotTracks(c(list(itrack,
+                  gtrack),
+             scaledTracks,
+             biomTrack1),
+           from = start,
+           to = end,
+           biomTrack1,
+           col = c("red", "blue"),
+           transcriptAnnotation = "symbol")
+
+# test overlay
+scaledTracks2 <- createScaledTracks(
+  bigwig_files = bigwig_files,
+  chr = chr,
+  start = start,
+  end = end,
+  track_names = track_names,
+  colors = track_colors,
+  padding_factor = 1.2,  # 20% padding above max signal
+  overlay = "yes"
+)
+
+plotTracks(
+  c(list(itrack,
+         gtrack),
+    scaledTracks2,
+    biomTrack1),
+  from = start,
+  to = end,
+  background.title = "transparent",
+  fontcolor.title = "black",
+  # y-axis colors
+  col.axis = "black",
+  # y-axis colors
+  col = c("red", "blue"),
+  transcriptAnnotation = "symbol"
+)
+
+
+# col = c("red", "blue"),
+  # set group colors
+  #ylim = c(0, 3) # The range of the y-axis scale
 ```
