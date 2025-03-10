@@ -7,3 +7,4 @@ plots/
 data/
 overlaps/
 *.log
+*.gz
