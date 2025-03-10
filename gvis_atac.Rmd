@@ -24,9 +24,46 @@ BiocManager::install("org.Hs.eg.db")
 # load packages
 ```{r load packages}
 library(Gviz) # 1.42.1
+library(rtracklayer)
 library(GenomicRanges)
 library(BSgenome.Hsapiens.UCSC.hg19)
 library(TxDb.Hsapiens.UCSC.hg19.knownGene)
+```
+# Prefetch UCSC data for offline use
+
+In order to create ideogram tracks on the computing cluster that has no internet access, we must prefetch the data from UCSC and save it for later use. This will allow us to bypass the fetching step when we have no internet on the cluster.
+
+```{r prefetch ucsc data, eval = FALSE}
+# Download cytoBand data directly for hg38
+download.file(
+  "http://hgdownload.cse.ucsc.edu/goldenPath/hg38/database/cytoBand.txt.gz",
+  destfile = "cytoBand_hg38.txt.gz"
+)
+
+# Download cytoBand data directly for hg19
+download.file(
+  "http://hgdownload.cse.ucsc.edu/goldenPath/hg19/database/cytoBand.txt.gz",
+  destfile = "cytoBand_hg19.txt.gz"
+)
+
+# Read the downloaded file
+cytoBands <- read.table(
+  "cytoBand_hg19.txt.gz",
+  sep = "\t",
+  col.names = c("chrom", "chromStart", "chromEnd", "name", "gieStain")
+)
+
+# Create ideogram track
+ideoTrack <- IdeogramTrack(genome="hg38", bands=cytoBands, chromosome="chr1")
+
+# Plot
+plotTracks(list(ideoTrack), from = 189990000, to = 190000000)
+
+# save bands for offline use
+saveRDS(cytoBands, file="hg19_cytobands.rds")
+
+# load bands for offline use
+cytoBands <- readRDS("hg19_cytobands.rds")
 ```
 
 ## TEMPORARY loading bdg
@@ -60,7 +97,8 @@ gene_coord <- function(symbol, Txdb = TxDb.Hsapiens.UCSC.hg19.knownGene){
       "is:",
       as.character(seqnames(coords)),start(coords),"-",end(coords)
   ))
-  
+class(coords)  
+return(coords)
 }
 
 # example function call
@@ -166,13 +204,19 @@ plotTracks(
 # Obtain GeneRegionTrack
 Often it is important to include a GeneRegionTrack to give context to which gene is being visualized through gene models. Both TxDb and BiomaRt can be used to retrieve this information, however, the track info is not identical.
 
-```{r GeneRegionTrack}
-chr <- "chr6"
+TxDb may also be preferable if internet access is not available such as operating on a retricted node on a computing cluster. Despite prefeching the mart object from biomaRt, it still tries to fetch from ensembl.org.
+```{r TxDb setup}
 # TxDb
 library(GenomicFeatures)
 samplefile <- system.file("extdata", "hg19_knownGene_sample.sqlite", 
                           package = "GenomicFeatures")
 txdb <- loadDb(samplefile)
+txdb_hg19 <- TxDb.Hsapiens.UCSC.hg19.knownGene
+```
+
+```{r GeneRegionTrack}
+chr <- "chr6"
+
 GeneRegionTrack(txdb)
 
 # biomart
@@ -183,16 +227,48 @@ bm <- useEnsembl(host = "https://grch37.ensembl.org",
 ```
 
 ```{r comparing TxDb vs biomaRt}
-# plot TxDb
+# make GeneRegionTrack with TxDb
 txTr <- GeneRegionTrack(txdb,
                         chromosome = chr,
                         start = 35000000,
                         end = 40000000)
+txTr2 <- GeneRegionTrack(txdb_hg19,
+                        chromosome = chr,
+                        start = 35000000,
+                        end = 40000000)
 
-plotTracks(txTr)
+# Map transcript IDs to gene symbols (TxDb doesn't store gene symbols)
+symbols <- unlist(mapIds(org.Hs.eg.db, gene(txTr2), "SYMBOL", "ENTREZID", multiVals = "first"))
+symbol(txTr2) <- symbols[gene(txTr2)]
+
+
+# plot GeneRegionTracks made with Txdb
+#plotTracks(txTr)
 plotTracks(txTr, from = 35000000,
            to = 40000000)
+plotTracks(list(txTr,txTr2), from = 35000000,
+           to = 40000000)
 
+plotTracks(txTr2, collapseTranscripts = "longest",
+           transcriptAnnotation = "symbol")
+
+# function that uses TxDb to make a GeneRegionTrack with proper Gene Symbol display
+MakeGeneRegionTrack_txdb <- function(txdb, chr, start, end, name = "gene"){
+  gr <- GeneRegionTrack(txdb,
+                        chromosome = chr,
+                        start = start,
+                        end = end,
+                        name = name)
+  # Map transcript IDs to gene symbols (TxDb doesn't store gene symbols)
+  symbols <-
+    unlist(mapIds(org.Hs.eg.db, gene(gr), "SYMBOL", "ENTREZID", multiVals = "first"))
+  symbol(gr) <- symbols[gene(gr)]
+  return(gr)
+}
+
+```
+
+```{r comparing TxDb vs biomaRt2}
 # plot biomaRt
 biomTrack <-
   BiomartGeneRegionTrack(
@@ -246,13 +322,18 @@ plotTracks(
 # Plot Gviz Genome Visualization for genes of interest
 ## CA9
 ```{r CA9}
-# determine locus location
-gene_coord("CA9")
+# determine locus location using our custom function gene_coord
+coords <- gene_coord("CA9")
+
+# assign locus info
+chr <- as.character(seqnames(coords))
+start <- start(coords)
+end <- end(coords)
+
 # CA9 Locus (coordinates below are from IGV and include upstream; not exactly same coords as from TxDb)
 #   chr9
 #   from = 35671925, to = 35683156
 
-chr <-"chr9"
 
 # add genome coordinates track
 gtrack <- GenomeAxisTrack()
@@ -265,6 +346,17 @@ itrack <- IdeogramTrack(genome = "hg19", chromosome = chr)
 ## a) select CA9 locus via gene symbol
 biomTrack <- BiomartGeneRegionTrack(genome = "hg19", name = "ENSEMBL", 
                                     symbol = "CA9", biomart = bm)
+biomTrack <-
+  BiomartGeneRegionTrack(
+    genome = "hg19",
+    name = "ENSEMBL",
+    symbol = "CA9",
+    biomart = bm,
+    col = "transparent",
+    filter = list(with_refseq_mrna = TRUE),
+    # filtering to RefSeq models only
+    collapseTranscripts = "longest"
+  )
 
 plotTracks(biomTrack, 
            transcriptAnnotation = "symbol")
@@ -272,7 +364,19 @@ plotTracks(biomTrack,
 biomTrack1 <- BiomartGeneRegionTrack(genome = "hg19", name = "ENSEMBL", 
                                     gene = "ENSG00000107159", biomart = bm,
                                     col = "transparent")
-plotTracks(biomTrack1, 
+## c) select CA9 locus with ensembl id /w refseq models only and collapse longest
+biomTrack2 <- BiomartGeneRegionTrack(
+  genome = "hg19",
+  name = "ENSEMBL",
+  gene = "ENSG00000107159",
+  biomart = bm,
+  col = "transparent",
+  filter = list(with_refseq_mrna = TRUE),
+  # filtering to RefSeq models only
+  collapseTranscripts = "longest"
+)
+
+plotTracks(list(biomTrack2,biomTrack1,biomTrack),
            transcriptAnnotation = "symbol")
 
 
@@ -290,6 +394,17 @@ displayPars(dTrack.ATAC2) <- list(groups = factor("hypoxia",
               levels = c("normoxia","hypoxia")), legend = TRUE) # manually set display params 
 
 ot1 <- OverlayTrack(trackList=list(dTrack.ATAC1, dTrack.ATAC2))
+
+# GeneRegionTrack txdb with UCSC transcript ids
+txTr3 <- GeneRegionTrack(txdb_hg19,
+                        chromosome = as.character(seqnames(coords)),
+                        start = start(coords),
+                        end = end(coords))
+# GeneRegionTrack using txdb with proper gene symbol display
+txTr4 <- MakeGeneRegionTrack_txdb(txdb_hg19,
+                        chr = as.character(seqnames(coords)),
+                        start = start(coords),
+                        end = end(coords))
 
 # ######
 # plot #
@@ -315,13 +430,26 @@ plotTracks(
   list(itrack,
        gtrack,
        ot1,
-       biomTrack1),
+       biomTrack1,
+       txTr3,
+       txTr4),
   from = 35671925,
   to = 35683156,
   col = c("red", "blue"),
   # set group colors
   transcriptAnnotation = "symbol",
   ylim = c(0, 3) # The range of the y-axis scale
+)
+
+
+plotTracks(
+  list(itrack,
+       gtrack,
+       txTr3,
+       txTr4),
+  from = 35671925,
+  to = 35683156,
+  transcriptAnnotation = "symbol"
 )
 
 ```
@@ -466,28 +594,8 @@ createScaledTracks <- function(bigwig_files,
     stop("Number of colors must match number of bigWig files")
   }
   
-  # Sample Grouping
-  ## INSERT sample grouping code
-  
   # Get maximum signal across all files
   max_signal <- getMaxSignal(bigwig_files, chr, start, end)
-  
-  
-  # tracks <- mapply(function(bw, name, col) {
-  #   DataTrack(range = bw,
-  #             chromosome = chr,
-  #             from = start,
-  #             to = end,
-  #             name = name,
-  #             type = "l",
-  #             col = col,
-  #             #groups = factor(track_names[1],
-  #             groups = factor(name,
-  #             levels = track_names),
-  #             legend = TRUE,
-  #             ylim = c(0, max_signal * padding_factor))
-  #
-  # }, bigwig_files, track_names, colors, SIMPLIFY = FALSE)
   
   # Create DataTrack for each bigWig file
   tracks <- list()
@@ -507,7 +615,7 @@ createScaledTracks <- function(bigwig_files,
       # set baseline color
       groups = factor(track_names[i],
                       levels = track_names),
-      legend = TRUE,
+     legend = TRUE,
       ylim = c(0, max_signal * padding_factor)
     )
   }
@@ -566,15 +674,16 @@ itrack <- IdeogramTrack(genome = "hg19", chromosome = chr)
 plotTracks(c(list(itrack,
                   genome_axis), 
                   scaledTracks),
+           legend = FALSE,
            from = start, to = end)
 
 plotTracks(c(list(itrack,
                   gtrack),
              scaledTracks,
-             biomTrack1),
+             biomTrack),
            from = start,
            to = end,
-           biomTrack1,
+           #biomTrack1,
            col = c("red", "blue"),
            transcriptAnnotation = "symbol")
 
@@ -607,7 +716,161 @@ plotTracks(
 )
 
 
-# col = c("red", "blue"),
-  # set group colors
-  #ylim = c(0, 3) # The range of the y-axis scale
+scaledTracks
+```
+# BED annotation Track
+
+Here I write a function that creates annotation tracks for bed files.
+```{r bed annotation track}
+# Create tracks with custom parameters
+chr = "chr9"
+start = 35671925
+end = 35683156
+
+# path to bed file(s)
+bedFile <- "J:/genome-viewer/bed/2023-01-04_G361_N_72_vs_H_24_hypoxia_enrich.bed"
+bedFile_many <- c("J:/genome-viewer/bed/2023-01-04_G361_N_72_vs_H_24_normoxia_enrich.bed",
+                  "J:/genome-viewer/bed/2023-01-04_G361_N_72_vs_H_24_hypoxia_enrich.bed")
+
+# import the bed as granges object
+bed <- rtracklayer::import(bedFile)
+
+# create annotationTrack
+bedTrack <- AnnotationTrack(range = bed, genome = "hg19", 
+                           name = "H24_peaks", chromosome = chr)
+# plot
+plotTracks(bedTrack, from = start, to = end)
+
+# plot with previous tracks
+plotTracks(
+  c(list(itrack,
+         gtrack),
+    scaledTracks2,
+    bedTrack,
+    biomTrack1),
+  from = start,
+  to = end,
+  background.title = "transparent",
+  fontcolor.title = "black",
+  # y-axis colors
+  col.axis = "black",
+  # y-axis colors
+  col = c("red", "blue"),
+  transcriptAnnotation = "symbol"
+)
+```
+
+```{r}
+create_bed_annotation_track <-
+  function(bed_paths,
+           track_names = NULL,
+           color = "darkblue",
+           chr) {
+    # Input validation
+    if (length(bed_paths) == 0) {
+      stop("At least one BED file path must be provided")
+    }
+    
+    # If no track names provided, use filenames
+    if (is.null(track_names)) {
+      track_names <- basename(bed_paths)
+    }
+    
+    # Ensure track names match number of files
+    if (length(track_names) != length(bed_paths)) {
+      stop("Number of track names must match number of BED files")
+    }
+    
+    # Ensure colors match number of track names
+    if (length(color) != length(track_names)) {
+      print("Number of colors should match number of BED files")
+      # set to vector of darkblue
+      color <- rep("darkblue",length(track_names))
+    }
+    
+    # Create annotation tracks
+    tracks <- list()
+    for (i in seq_along(bed_paths)) {
+      # Import BED file
+      bed_data <- import(bed_paths[i])
+      
+      # Create Gviz annotation track
+      tracks[[i]] <- AnnotationTrack(
+        range = bed_data,
+        chromosome = chr,
+        name = track_names[i],
+        color = color[i],
+        fill = color[i]
+       # stacking = "dense"
+      )
+    }
+    
+    return(tracks)
+  }
+
+# Example usage:
+bedFile_many <-
+  c(
+    "J:/genome-viewer/bed/2023-01-04_G361_N_72_vs_H_24_normoxia_enrich.bed",
+    "J:/genome-viewer/bed/2023-01-04_G361_N_72_vs_H_24_hypoxia_enrich.bed"
+  )
+track_names <- c("N_72", "H_24")
+bed_colours <- c("darkred","darkblue")
+
+bed_annotation_track <-
+  create_bed_annotation_track(bedFile_many, track_names, bed_colours, chr = "chr9")
+
+plotTracks(bed_annotation_track,
+           from = start,
+           to = end)
+
+
+getOption("Gviz.scheme")
+scheme <- getScheme()
+scheme$AnnotationTrack$col <- "transparent"
+scheme$GeneRegionTrack$col <- "transparent"
+addScheme(scheme, "myScheme")
+options(Gviz.scheme = "myScheme")
+
+# plot with previous tracks
+plotTracks(
+  c(list(itrack,
+         gtrack),
+    scaledTracks2,
+    bed_annotation_track,
+   biomTrack1
+    ),
+  from = start,
+  to = end,
+  background.title = "transparent",
+  fontcolor.title = "black",
+  col.axis = "black",
+  col = c("green", "red"),  # y-axis colors
+  transcriptAnnotation = "symbol"
+)
+
+pdf("test.pdf")
+plotTracks(
+  c(list(itrack,
+         gtrack),
+    scaledTracks2,
+    bed_annotation_track,
+   biomTrack1
+    ),
+  from = start,
+  to = end,
+  background.title = "transparent",
+  fontcolor.title = "black",
+  col.axis = "black",
+  #col = c("green", "red"),  # y-axis colors
+  transcriptAnnotation = "symbol"
+)
+dev.off()
+```
+
+```
+txTr <- GeneRegionTrack(txdb,
+                        chromosome = chr,
+                        start = 35000000,
+                        end = 40000000)
 ```
