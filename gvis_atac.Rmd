@@ -5,7 +5,6 @@ output: html_notebook
 
 # Introduction
 
-
 # install packages
 
 Here we install Gviz and their dependencies to allow for genome visualization. Additional packages such as `BSgenome` and `TxDb` contain sequence information and genomic coordinate info respectively. Specifically, we install the hg19 version of these packages, since we know we will be using hg19 aligned ATAC-seq track and signal files. Typically hg38 is preferred for newer data analysis, but it is important to note the genomic coordinates will differ between hg19 and hg38.
@@ -22,6 +21,7 @@ BiocManager::install("org.Hs.eg.db")
 ```
 
 # load packages
+
 ```{r load packages}
 library(Gviz) # 1.42.1
 library(rtracklayer)
@@ -29,6 +29,7 @@ library(GenomicRanges)
 library(BSgenome.Hsapiens.UCSC.hg19)
 library(TxDb.Hsapiens.UCSC.hg19.knownGene)
 ```
+
 # Prefetch UCSC data for offline use
 
 In order to create ideogram tracks on the computing cluster that has no internet access, we must prefetch the data from UCSC and save it for later use. This will allow us to bypass the fetching step when we have no internet on the cluster.
@@ -67,6 +68,7 @@ cytoBands <- readRDS("hg19_cytobands.rds")
 ```
 
 ## TEMPORARY loading bdg
+Here we can load a bedgraph file included in the Gviz package for testing.
 ```{r temp load bdg}
 bgFile <- system.file("extdata/test.bedGraph", package = "Gviz")
 dTrack.ATAC1 <- DataTrack(range = bgFile, genome = "hg19", type = "l", 
@@ -76,10 +78,21 @@ dTrack.ATAC2 <- dTrack.ATAC1
 
 # Extract coordinates for a gene
 
-Below I write a function that returns the chromosome and start/end coordinates for a given HGNC gene symbol. This will be useful when we assign coordinates to gviz for drawing. 
+Below I write a function that returns the chromosome and start/end coordinates for a given HGNC gene symbol. This will be useful when we assign coordinates to gviz for drawing.
+
 ```{r extract coordinates for a given gene}
 library(org.Hs.eg.db)
 
+#' Find Genome coordinates for a Gene
+#'
+#' @param symbol A character representing the gene symbol 
+#' @param Txdb A GenomicFeatures object. The TxDb specific to your genome build (hg19). 
+#'
+#' @return Returns a Granges object. The Granges object will return the relevant seqnames, #' ranges, strand, and gene_id (ENTREZID) specific to the symbol provided to the function.
+#' @export
+#'
+#' @examples gene_coord("CA9")
+#' 
 gene_coord <- function(symbol, Txdb = TxDb.Hsapiens.UCSC.hg19.knownGene){
   symbol <- toupper(symbol) # make gene symbol upper case
   
@@ -106,6 +119,7 @@ gene_coord("CA9")
 ```
 
 # DataTrack construction
+
 Next, we create DataTracks for each bigwig we want visualized using Gviz.
 
 ```{r data track from bam}
@@ -122,7 +136,9 @@ plotTracks(dTrack1, from = 189990000, to = 190000000)
 ```
 
 ## load bigwigs
+
 Here we load the bigwig (bw) files generated from MACS2 from our ATAC-seq experiment.
+
 ```{r data track from bigwig}
 # set chromosome
 chr <- "chr1"
@@ -145,7 +161,9 @@ plotTracks(dTrack.ATAC2, from = 189990000, to = 190000000)
 ```
 
 ## Plot DataTracks with additional tracks
+
 Next, we add additional tracks to generate a genome view that is similar to what IGV or UCSC genome browser would provide.
+
 ```{r data track from bigwig chr6}
 gen = "hg19"
 chr = "chr6"
@@ -202,9 +220,11 @@ plotTracks(
 ```
 
 # Obtain GeneRegionTrack
+
 Often it is important to include a GeneRegionTrack to give context to which gene is being visualized through gene models. Both TxDb and BiomaRt can be used to retrieve this information, however, the track info is not identical.
 
 TxDb may also be preferable if internet access is not available such as operating on a retricted node on a computing cluster. Despite prefeching the mart object from biomaRt, it still tries to fetch from ensembl.org.
+
 ```{r TxDb setup}
 # TxDb
 library(GenomicFeatures)
@@ -252,7 +272,18 @@ plotTracks(list(txTr,txTr2), from = 35000000,
 plotTracks(txTr2, collapseTranscripts = "longest",
            transcriptAnnotation = "symbol")
 
-# function that uses TxDb to make a GeneRegionTrack with proper Gene Symbol display
+#' Make GeneRegionTrack using TxDb and with proper Gene Symbol display
+#'
+#' @param txdb txdb object. with genome annotation appropriate for your genome ie. hg19
+#' @param chr character. character that shows chromosome for gene of interest ie. chr7
+#' @param start numeric. start coordinate for the gene
+#' @param end numeric. end coordinate for the gene
+#' @param name character. Label name for y-axis
+#'
+#' @return
+#' @export
+#'
+#' @examples
 MakeGeneRegionTrack_txdb <- function(txdb, chr, start, end, name = "gene"){
   gr <- GeneRegionTrack(txdb,
                         chromosome = chr,
@@ -320,7 +351,9 @@ plotTracks(
 ```
 
 # Plot Gviz Genome Visualization for genes of interest
+
 ## CA9
+
 ```{r CA9}
 # determine locus location using our custom function gene_coord
 coords <- gene_coord("CA9")
@@ -455,12 +488,24 @@ plotTracks(
 ```
 
 # Dynamic Y-axis scaling
+
 Gviz can overlay several DataTracks using the `OverlayTrack()` function, but the y-axis range is controlled by the first DataTrack. One must explicitly specify the y-axis range that is shared across all those overlayed tracks for proper comparison. The default behavior is to take the y-axis of the first DataTrack within the list of DataTracks being overlayed. This can be problematic if other DataTracks have different maximal signals, which results in a suboptimal y-axis range being set.
 
-Here I write a function that can dynamically scale the Y-axis given one or more bigwigs that are plotted together.
-## one sample
+Here I write a function that can dynamically scale the Y-axis given one or more bigwigs that are plotted together. \## one sample
+
 ```{r dyanamic y-axis scaling function}
 # Function to get max signal from bigWig in a given range
+#' Title
+#'
+#' @param bigwig_file 
+#' @param chr 
+#' @param start 
+#' @param end 
+#'
+#' @return
+#' @export
+#'
+#' @examples
 getMaxSignal <- function(bigwig_file, chr, start, end) {
   # Import specific genomic range from bigWig
   bw <- import(bigwig_file, 
@@ -496,8 +541,8 @@ createScaledTrack <- function(bigwig_file, chr, start, end,
 ```{r testing dynamic y-axis scaling}
 # Example usage
 ## comment out depending on PC or macbook:
-# bigwig_file <- "data/ENCODE/ENCFF923TGK.bigWig"
-bigwig_file <- bwFile1
+ bigwig_file <- "data/ENCODE/ENCFF923TGK.bigWig"
+#bigwig_file <- bwFile1
 
 chr <- "chr9"
 start <- 35671925
@@ -536,9 +581,9 @@ plotTracks(
   transcriptAnnotation = "symbol"
 )
 ```
-Typically, more than one bigwig file is used to construct a figure. For example, if we are comparing control vs treatment or in the case below, normoxia vs hypoxia.
-Below we adjust the function to take in more than one input bigwig file:
-## one or more samples
+
+Typically, more than one bigwig file is used to construct a figure. For example, if we are comparing control vs treatment or in the case below, normoxia vs hypoxia. Below we adjust the function to take in more than one input bigwig file: \## one or more samples
+
 ```{r one or more bw y-axis scaling}
 # Function to get max signal from one or more bigWig files in a given range
 getMaxSignal <- function(bigwig_files, chr, start, end) {
@@ -644,8 +689,10 @@ single_track <- createScaledTracks(single_bigwig, "chr9", 35671925, 35683156)
 
 # Multiple files
 bigwig_files <- list(
-  "J:/genome-viewer/heatmap/RW555-1_treat_pileup.bw",
-  "J:/genome-viewer/heatmap/RW555-2_treat_pileup.bw"
+  #"J:/genome-viewer/heatmap/RW555-1_treat_pileup.bw",
+  #"J:/genome-viewer/heatmap/RW555-2_treat_pileup.bw"
+  "data/ENCODE/ENCFF923TGK.bigWig",
+  "data/ENCODE/ENCFF923TGK.bigWig"
 )
 
 # Custom track names and colors
@@ -718,9 +765,17 @@ plotTracks(
 
 scaledTracks
 ```
+##
+```{r display parameter check, eval = FALSE}
+displayPars(gtrack)
+
+displayPars((scaledTracks[[1]]))
+```
+
 # BED annotation Track
 
 Here I write a function that creates annotation tracks for bed files.
+
 ```{r bed annotation track}
 # Create tracks with custom parameters
 chr = "chr9"
@@ -868,7 +923,7 @@ plotTracks(
 dev.off()
 ```
 
-```
+```         
 txTr <- GeneRegionTrack(txdb,
                         chromosome = chr,
                         start = 35000000,
