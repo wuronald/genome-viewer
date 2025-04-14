@@ -1,0 +1,79 @@
+{
+	"general": {
+		"layout": "stacked",
+		"reference": "hg19"
+	},
+	"output": {
+		"dpi": 400,
+		"file": "G361_CA9_figure.svg",
+		"width": 80
+	},
+	"regions": [
+		{
+			"chr": "9",
+			"start": 35673925,
+			"end": 35681156,
+			"color": "#f4a460"
+		}
+	],
+	"highlights": [],
+	"tracks": [
+		{
+			"type": "bigwig",
+			"height": 10,
+			"margin_above": 1.5,
+			"bounding_box": false,
+			"fontscale": 1,
+			"label": "G361 RW555-1",
+			"label_rotate": false,
+			"file": "/cluster/projects/wouterslab/RW555/deeptools/heatmap/RW555-1_treat_pileup.bw",
+			"color": "#2980b9",
+			"n_bins": 500,
+			"scale": "group auto",
+			"group": "G361_ATAC",
+			"scale_pos": "left"
+		},
+		{
+			"type": "bigwig",
+			"height": 10,
+			"margin_above": 1.5,
+			"bounding_box": false,
+			"fontscale": 1,
+			"label": "G361 RW555-2",
+			"label_rotate": false,
+			"file": "/cluster/projects/wouterslab/RW555/deeptools/heatmap/RW555-2_treat_pileup.bw",
+			"color": "#e74c3c",
+			"n_bins": 500,
+			"scale": "group auto",
+			"group": "G361_ATAC",
+			"scale_pos": "left"
+		},
+		{
+			"type": "genes",
+			"height": 11,
+			"margin_above": 1.5,
+			"bounding_box": false,
+			"fontscale": 1,
+			"label": "",
+			"label_rotate": false,
+			"style": "default",
+			"collapsed": true,
+			"only_protein_coding": true,
+			"exon_color": "#2980b9",
+			"genes": "auto"
+		},
+		{
+			"type": "chr_axis",
+			"height": 10,
+			"margin_above": 1.5,
+			"bounding_box": false,
+			"fontscale": 0.8,
+			"label": "",
+			"label_rotate": false,
+			"style": "ideogram",
+			"unit": "kb",
+			"ticklabels_pos": "below",
+			"ticks_interval": "auto"
+		}
+	]
+}
