@@ -5,9 +5,13 @@ Explore programmatic (R or python) alternatives to IGV for genome visualization 
 An R package called Gviz is popular for genome visualization.
 
 See my notebooks here:
+
 [gviz tutorial](https://github.com/wuronald/genome-viewer/blob/main/gvis_tutorial.Rmd)
+
 + This is the standard tutorial from the Gviz official vignette.
+
 [gviz atac](https://github.com/wuronald/genome-viewer/blob/main/gvis_atac.Rmd)
+
 + Here I attempt to visualize two bulk ATAC-seq samples by using their bigwig files.
 
 ## Figeno
