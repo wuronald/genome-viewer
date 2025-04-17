@@ -11,8 +11,8 @@
 	"regions": [
 		{
 			"chr": "9",
-			"start": 35673925,
-			"end": 35681156,
+			"start": 35663925,
+			"end": 35691156,
 			"color": "#f4a460"
 		}
 	],
@@ -42,6 +42,36 @@
 			"label": "G361 RW555-2",
 			"label_rotate": false,
 			"file": "/cluster/projects/wouterslab/RW555/deeptools/heatmap/RW555-2_treat_pileup.bw",
+			"color": "#e74c3c",
+			"n_bins": 500,
+			"scale": "group auto",
+			"group": "G361_ATAC",
+			"scale_pos": "left"
+		},
+		{
+			"type": "bigwig",
+			"height": 10,
+			"margin_above": 1.5,
+			"bounding_box": false,
+			"fontscale": 1,
+			"label": "G361 RW555-2",
+			"label_rotate": false,
+			"file": "/cluster/projects/wouterslab/RW555/deeptools/heatmap/RW555-3_treat_pileup.bw",
+			"color": "#e74c3c",
+			"n_bins": 500,
+			"scale": "group auto",
+			"group": "G361_ATAC",
+			"scale_pos": "left"
+		},
+		{
+			"type": "bigwig",
+			"height": 10,
+			"margin_above": 1.5,
+			"bounding_box": false,
+			"fontscale": 1,
+			"label": "G361 RW555-2",
+			"label_rotate": false,
+			"file": "/cluster/projects/wouterslab/RW555/deeptools/heatmap/RW555-4_treat_pileup.bw",
 			"color": "#e74c3c",
 			"n_bins": 500,
 			"scale": "group auto",
